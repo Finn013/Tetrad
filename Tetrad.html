@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tetrad — рисование по клеточкам</title>
+  <style>
+/* style.css */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f0f0f0;
+    color: #333;
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
+    touch-action: none;
+}
+
+/* ══ ТУЛБАР ══ */
+#toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 48px;
+    padding: 0 8px;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 50;
+}
+
+.tb-sep {
+    flex: 1; /* толкает undo/redo/clear вправо */
+}
+
+.tb-btn {
+    height: 34px;
+    min-width: 34px;
+    padding: 0 8px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background .15s;
+}
+.tb-btn:hover { background: #f0f0f0; }
+.tb-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ══ DROPDOWN ══ */
+.dropdown { position: relative; }
+
+.dropdown-trigger {
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .15s;
+}
+.dropdown-trigger:hover { background: #f0f0f0; }
+.dropdown-trigger.open   { background: #e8f0fe; border-color: #1976d2; }
+
+.dropdown-panel {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.15);
+    padding: 12px;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 170px;
+    z-index: 200;
+}
+.dropdown-panel.open { display: flex; }
+
+/* Панель не уходит за правый край */
+.dropdown:last-of-type .dropdown-panel,
+.dropdown-panel.align-right { left: auto; right: 0; }
+
+.dp-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+}
+.dp-sep { border: none; border-top: 1px solid #eee; margin: 2px 0; }
+.dp-row { display: flex; gap: 6px; }
+.dp-row button { flex: 1; }
+
+/* ══ ГЛАВНАЯ ОБЛАСТЬ ══ */
+#main-area {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+
+/* ══ БОКОВАЯ ПАНЕЛЬ ══ */
+#sidebar {
+    display: flex;
+    flex-direction: column;
+    width: 68px;
+    background: #fff;
+    border-right: 1px solid #ddd;
+    flex-shrink: 0;
+    padding: 6px 4px;
+    gap: 3px;
+    overflow-y: auto;
+    touch-action: none;
+}
+
+.mode-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 100%;
+    min-height: 54px;
+    padding: 6px 2px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+    font-size: 18px;
+    transition: background .15s, border-color .15s;
+    touch-action: manipulation;
+}
+.mode-btn span {
+    font-size: 10px;
+    color: #666;
+    line-height: 1.1;
+    text-align: center;
+}
+.mode-btn:hover { background: #f5f5f5; }
+.mode-btn.mode-active {
+    background: #e8f0fe;
+    border-color: #1976d2;
+}
+.mode-btn.mode-active span { color: #1976d2; font-weight: 600; }
+
+/* ══ CANVAS ══ */
+.scroll-container {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    background: #e9e9e9;
+    cursor: grab;
+    touch-action: none;
+}
+.scroll-container:active { cursor: grabbing; }
+
+#canvas {
+    position: absolute;
+    top: 0; left: 0;
+    display: block;
+    touch-action: none;
+}
+
+/* ══ ОБЩИЕ КНОПКИ В DROPDOWN ══ */
+select, .dropdown-panel button {
+    background: #fff;
+    color: #333;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background .15s;
+    min-height: 34px;
+    text-align: left;
+}
+select:hover, .dropdown-panel button:hover { background: #f5f5f5; }
+
+input[type="color"] {
+    width: 48px; height: 36px;
+    padding: 2px; border: 1px solid #ccc;
+    border-radius: 6px; cursor: pointer; background: none;
+}
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 4px; }
+
+.scale-controls { display: flex; align-items: center; gap: 4px; }
+.scale-controls button {
+    min-width: 32px; min-height: 32px;
+    padding: 0; font-size: 16px; font-weight: bold;
+    text-align: center;
+}
+#gridScaleDisplay {
+    min-width: 32px; text-align: center;
+    font-weight: 600; font-size: 14px;
+}
+
+/* ══ ПОДСКАЗКА РЕЖИМА ══ */
+#modeHint {
+    position: fixed;
+    bottom: 16px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(20,20,20,.82);
+    color: #fff;
+    padding: 8px 18px;
+    border-radius: 20px;
+    font-size: 13px;
+    pointer-events: none;
+    z-index: 300;
+    opacity: 0;
+    transition: opacity .2s;
+    white-space: nowrap;
+    backdrop-filter: blur(4px);
+}
+#modeHint.visible { opacity: 1; }
+
+/* ══ МОБИЛЬНЫЕ ══ */
+@media (max-width: 600px) {
+    /* Sidebar → нижняя панель */
+    #main-area { flex-direction: column; }
+
+    #sidebar {
+        flex-direction: row;
+        width: 100%;
+        height: 60px;
+        border-right: none;
+        border-top: 1px solid #ddd;
+        padding: 4px 6px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        order: 2;
+    }
+    .mode-btn {
+        min-height: 50px;
+        min-width: 56px;
+        flex-shrink: 0;
+    }
+    .scroll-container { order: 1; }
+
+    .dropdown-trigger { font-size: 12px; padding: 0 7px; }
+    .dropdown-panel { min-width: 150px; }
+
+    select, .dropdown-panel button { min-height: 40px; font-size: 14px; }
+}
+
+/* ══ ТЕТРАДЬ ══ */
+.sb-sep { height:1px; background:#e3e3e3; margin:2px 4px; flex-shrink:0; }
+.mode-btn.app-mode { background:#fff8e1; border-color:#f0c36d; }
+.mode-btn.app-mode span { color:#8a6d1f; font-weight:600; }
+#flipCanvas { position:absolute; top:0; left:0; pointer-events:none; display:none; z-index:5; will-change:transform; }
+#pageNav {
+  position:absolute; left:50%; bottom:12px; transform:translateX(-50%);
+  display:none; align-items:center; gap:4px; z-index:10;
+  background:rgba(255,255,255,.95); border:1px solid #ddd; border-radius:22px;
+  padding:4px 6px; box-shadow:0 2px 8px rgba(0,0,0,.15);
+}
+#pageNav button { min-width:38px; height:36px; border:none; background:transparent; border-radius:18px; font-size:16px; cursor:pointer; touch-action:manipulation; }
+#pageNav button:hover { background:#f0f0f0; }
+#pageNav button:disabled { opacity:.35; cursor:default; }
+#pageLabel { min-width:64px; text-align:center; font-size:14px; font-weight:600; color:#555; }
+body.notebook #pageNav { display:flex; }
+body.notebook #modeHint { bottom: 72px; }
+body.notebook .scale-row { display:none; }
+@media (max-width:600px){
+  .sb-sep{ width:1px; height:auto; margin:4px 2px; }
+  #sidebar .mode-btn{ width:auto; flex:1 0 54px; min-width:54px; }
+  .dropdown-trigger .tl{ display:none; }
+  #toolbar{ gap:3px; padding:0 5px; }
+}
+
+</style>
+  <meta name="theme-color" content="#ffffff">
+  <link rel="icon" type="image/png" href="data:image/png;base64,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">
+</head>
+<body>
+
+<!-- ══ ТУЛБАР СВЕРХУ ══ -->
+<div id="toolbar">
+
+  <div class="dropdown">
+    <button class="dropdown-trigger" title="Сетка">⊞<span class="tl"> Сетка</span> ▾</button>
+    <div class="dropdown-panel">
+      <label class="dp-label" id="gridTypeLabel">Тип</label>
+      <select id="gridType">
+        <option value="square">Квадраты</option>
+        <option value="triangle">Треугольники</option>
+        <option value="hexagon">Шестиугольники</option>
+      </select>
+      <label class="dp-label scale-row">Размер ячейки</label>
+      <div class="scale-controls scale-row">
+        <button id="gridScaleMinus">−</button>
+        <span id="gridScaleDisplay">50</span>
+        <button id="gridScalePlus">+</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="dropdown">
+    <button class="dropdown-trigger" title="Настройки линии">✏<span class="tl"> Линия</span> ▾</button>
+    <div class="dropdown-panel">
+      <label class="dp-label">Цвет</label>
+      <input type="color" id="lineColor" value="#000000">
+      <label class="dp-label">Толщина</label>
+      <select id="lineThickness">
+        <option value="2">Тонкая</option>
+        <option value="4" selected>Нормальная</option>
+        <option value="8">Толстая</option>
+      </select>
+      <label class="dp-label">Стиль</label>
+      <select id="lineStyle">
+        <option value="solid">Сплошная</option>
+        <option value="dashed">Пунктир</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="dropdown">
+    <button class="dropdown-trigger" title="Настройки заливки">▨<span class="tl"> Заливка</span> ▾</button>
+    <div class="dropdown-panel">
+      <label class="dp-label">Цвет заливки</label>
+      <input type="color" id="fillColor" value="#e53935">
+    </div>
+  </div>
+
+  <div class="dropdown">
+    <button class="dropdown-trigger" title="Файл и проекты">💾<span class="tl"> Файл</span> ▾</button>
+    <div class="dropdown-panel" style="min-width:210px">
+      <button id="savePngBtn">📷 Сохранить PNG</button>
+      <button id="exportBtn">📤 Экспорт JSON (всё)</button>
+      <button id="importBtn">📥 Импорт JSON</button>
+      <input type="file" id="importFile" accept=".json" style="display:none">
+      <hr class="dp-sep">
+      <label class="dp-label">Проекты</label>
+      <button id="saveProjectBtn">💾 Сохранить проект</button>
+      <select id="projectList"></select>
+      <div class="dp-row">
+        <button id="loadProjectBtn">Загрузить</button>
+        <button id="deleteProjectBtn">Удалить</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tb-sep"></div>
+
+  <button id="undoBtn" class="tb-btn" disabled title="Отменить (Ctrl+Z)">↩</button>
+  <button id="redoBtn" class="tb-btn" disabled title="Повторить (Ctrl+Y)">↪</button>
+  <button id="clearBtn" class="tb-btn" title="Очистить всё">🗑</button>
+</div>
+
+<!-- ══ ОСНОВНАЯ ОБЛАСТЬ ══ -->
+<div id="main-area">
+
+  <!-- Боковая панель режимов -->
+  <div id="sidebar">
+    <button id="appModeBtn" class="mode-btn app-mode" title="Тетрадь или бесконечное поле">📓<span>Тетрадь</span></button>
+    <div class="sb-sep"></div>
+    <button id="drawModeBtn"    class="mode-btn mode-active" title="Рисовать">✏<span>Рисовать</span></button>
+    <button id="deleteLineBtn"  class="mode-btn" title="Удалить линию">━<span>Линию</span></button>
+    <button id="deleteBetweenBtn" class="mode-btn" title="Удалить сегмент">✂<span>Сегмент</span></button>
+    <button id="startFillBtn"   class="mode-btn" title="Контур заливки">▦<span>Контур</span></button>
+    <button id="autoFillBtn"    class="mode-btn" title="Автозаливка">◆<span>Заливка</span></button>
+    <button id="removeFillBtn"  class="mode-btn" title="Удалить заливку">◇<span>Уд.обл.</span></button>
+  </div>
+
+  <!-- Холст -->
+  <div class="scroll-container">
+    <canvas id="canvas"></canvas>
+    <canvas id="flipCanvas"></canvas>
+    <div id="pageNav">
+      <button id="prevPageBtn" title="Предыдущая страница">◀</button>
+      <span id="pageLabel">1 / 1</span>
+      <button id="nextPageBtn" title="Следующая страница">▶</button>
+      <button id="addPageBtn" title="Новая страница">＋</button>
+      <button id="delPageBtn" title="Удалить страницу">🗑</button>
+    </div>
+  </div>
+
+</div><!-- /main-area -->
+
+<!-- Подсказка активного режима -->
+<div id="modeHint"></div>
+
+<script>
+// main.js
+
+const IS_TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+const SNAP_RADIUS  = IS_TOUCH ? 44 : 20;
+const PAN_THRESHOLD = 8;
+
+// ── СОСТОЯНИЕ ──────────────────────────────────
+let gridType = 'square', gridScale = 50;
+let appMode = 'field', exportingPage = false;
+const NB_SCALE = 40, PAGE_COLS = 34, PAGE_ROWS = 44;
+const PAGE_W = NB_SCALE*PAGE_COLS, PAGE_H = NB_SCALE*PAGE_ROWS, MARGIN = NB_SCALE*4;
+function inPage(x,y){const e=0.5;return x>=-e&&y>=-e&&x<=PAGE_W+e&&y<=PAGE_H+e;}
+let userLines = [], fills = [], pixelFills = [];
+let selectedNode = null, hoveredNode = null, tempLine = null, isDrawing = false;
+let currentLineColor = '#000000', currentFillColor = '#e53935';
+let currentLineThickness = 4, currentLineStyle = 'solid';
+
+let pendingTap=null;
+let deleteMode=false, deleteBetweenMode=false, fillContourMode=false, autoFillMode=false, removeFillMode=false;
+let currentContour=[], hoveredLineIdx=-1, hoveredSegment=null;
+
+const camera = {x:0,y:0,zoom:1};
+let isPanning=false, panStart={x:0,y:0}, lastTouchCenter=null, lastTouchDistance=0;
+let touchStartPos=null, touchStartNode=null, touchHasMoved=false;
+
+let intersectionCache=null, intersectionCacheSize=-1;
+let history=[], redoStack=[];
+const MAX_HISTORY=60;
+
+// ── DOM ────────────────────────────────────────
+const canvasContainer     = document.querySelector('.scroll-container');
+const canvas              = document.getElementById('canvas');
+const ctx                 = canvas.getContext('2d');
+const gridTypeSelect      = document.getElementById('gridType');
+const gridScaleDisplay    = document.getElementById('gridScaleDisplay');
+const gridScaleMinus      = document.getElementById('gridScaleMinus');
+const gridScalePlus       = document.getElementById('gridScalePlus');
+const clearBtn            = document.getElementById('clearBtn');
+const undoBtn             = document.getElementById('undoBtn');
+const redoBtn             = document.getElementById('redoBtn');
+const deleteLineBtn       = document.getElementById('deleteLineBtn');
+const deleteBetweenBtn    = document.getElementById('deleteBetweenBtn');
+const lineColorInput      = document.getElementById('lineColor');
+const fillColorInput      = document.getElementById('fillColor');
+const lineThicknessSelect = document.getElementById('lineThickness');
+const lineStyleSelect     = document.getElementById('lineStyle');
+const startFillBtn        = document.getElementById('startFillBtn');
+const autoFillBtn         = document.getElementById('autoFillBtn');
+const removeFillBtn       = document.getElementById('removeFillBtn');
+const savePngBtn          = document.getElementById('savePngBtn');
+const exportBtn           = document.getElementById('exportBtn');
+const importBtn           = document.getElementById('importBtn');
+const importFile          = document.getElementById('importFile');
+const saveProjectBtn      = document.getElementById('saveProjectBtn');
+const loadProjectBtn      = document.getElementById('loadProjectBtn');
+const projectList         = document.getElementById('projectList');
+const deleteProjectBtn    = document.getElementById('deleteProjectBtn');
+const drawModeBtn         = document.getElementById('drawModeBtn');
+const modeHint            = document.getElementById('modeHint');
+
+// ── CANVAS RESIZE ──────────────────────────────
+function resizeCanvas(){canvas.width=canvasContainer.clientWidth;canvas.height=canvasContainer.clientHeight;draw();}
+window.addEventListener('resize',()=>{resizeCanvas();});
+
+// ── КООРДИНАТЫ ─────────────────────────────────
+function screenToWorld(x,y){return{x:(x-camera.x)/camera.zoom,y:(y-camera.y)/camera.zoom};}
+function worldToScreen(x,y){return{x:x*camera.zoom+camera.x,y:y*camera.zoom+camera.y};}
+
+// ── ИСТОРИЯ ────────────────────────────────────
+function cloneState(){return{userLines:JSON.parse(JSON.stringify(userLines)),fills:JSON.parse(JSON.stringify(fills)),pixelFills:pixelFills.slice()};}
+function saveState(){history.push(cloneState());if(history.length>MAX_HISTORY)history.shift();redoStack=[];updateHistoryButtons();markDirty();}
+function undo(){if(!history.length)return;redoStack.push(cloneState());const p=history.pop();userLines=p.userLines;fills=p.fills;pixelFills=p.pixelFills||[];invalidateIntersectionCache();markDirty();updateHistoryButtons();draw();}
+function redo(){if(!redoStack.length)return;history.push(cloneState());const n=redoStack.pop();userLines=n.userLines;fills=n.fills;pixelFills=n.pixelFills||[];invalidateIntersectionCache();markDirty();updateHistoryButtons();draw();}
+function updateHistoryButtons(){undoBtn.disabled=!history.length;redoBtn.disabled=!redoStack.length;}
+
+// ── КЭШ ПЕРЕСЕЧЕНИЙ ───────────────────────────
+function invalidateIntersectionCache(){intersectionCache=null;intersectionCacheSize=-1;}
+function getAllIntersectionPoints(){
+    if(intersectionCache&&intersectionCacheSize===userLines.length)return intersectionCache;
+    const pts=[];
+    for(let i=0;i<userLines.length;i++)for(let j=i+1;j<userLines.length;j++){
+        const a1=getLineCoord(userLines[i].from),a2=getLineCoord(userLines[i].to);
+        const b1=getLineCoord(userLines[j].from),b2=getLineCoord(userLines[j].to);
+        if(a1&&a2&&b1&&b2){const p=segmentIntersection(a1,a2,b1,b2);if(p)pts.push(p);}
+    }
+    intersectionCache=pts;intersectionCacheSize=userLines.length;return pts;
+}
+
+// ── РЕЖИМЫ ─────────────────────────────────────
+const MODE_HINTS={
+    deleteMode:        IS_TOUCH?'🗑 Коснитесь линии, потом уберите палец':'🗑 Наведите на линию и кликните. Esc — отмена',
+    deleteBetweenMode: IS_TOUCH?'✂ Коснитесь сегмента, потом уберите палец':'✂ Наведите на сегмент и кликните. Esc — отмена',
+    fillContourMode:   '✏ Кликайте по узлам контура, замкните на первом. Esc — отмена',
+    autoFillMode:      '🪣 Кликните внутрь замкнутой области. Esc — отмена',
+    removeFillMode:    '🧹 Кликните на заливку для удаления. Esc — отмена',
+};
+function setMode(mode){
+    deleteMode=deleteBetweenMode=fillContourMode=autoFillMode=removeFillMode=false;
+    currentContour=[];tempLine=null;
+    if(mode==='deleteMode')             deleteMode=true;
+    else if(mode==='deleteBetweenMode') deleteBetweenMode=true;
+    else if(mode==='fillContourMode')   fillContourMode=true;
+    else if(mode==='autoFillMode')      autoFillMode=true;
+    else if(mode==='removeFillMode')    removeFillMode=true;
+    canvas.style.cursor=mode?(mode==='fillContourMode'?'copy':'crosshair'):'';
+    updateModeButtons();
+    showModeHint(mode?MODE_HINTS[mode]:'');
+}
+function cancelAllModes(){
+    setMode(null);hoveredLineIdx=-1;hoveredSegment=null;
+    [deleteLineBtn,deleteBetweenBtn,startFillBtn,autoFillBtn,removeFillBtn].forEach(b=>b.disabled=false);
+    draw();
+}
+function updateModeButtons(){
+    const map={deleteLineBtn:deleteMode,deleteBetweenBtn:deleteBetweenMode,startFillBtn:fillContourMode,autoFillBtn:autoFillMode,removeFillBtn:removeFillMode};
+    for(const[id,active]of Object.entries(map))document.getElementById(id)?.classList.toggle('mode-active',active);
+    drawModeBtn?.classList.toggle('mode-active',!deleteMode&&!deleteBetweenMode&&!fillContourMode&&!autoFillMode&&!removeFillMode);
+}
+function showModeHint(text){modeHint.textContent=text;modeHint.classList.toggle('visible',!!text);}
+
+// ── КЛАВИАТУРА ─────────────────────────────────
+document.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){cancelAllModes();return;}
+    if(appMode==='notebook'&&!e.ctrlKey&&!e.metaKey&&(e.key==='PageDown'||e.key==='ArrowRight')&&e.target===document.body){e.preventDefault();turnPage(1);return;}
+    if(appMode==='notebook'&&!e.ctrlKey&&!e.metaKey&&(e.key==='PageUp'||e.key==='ArrowLeft')&&e.target===document.body){e.preventDefault();turnPage(-1);return;}
+    if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){e.preventDefault();undo();return;}
+    if((e.ctrlKey||e.metaKey)&&(e.key==='y'||(e.key==='z'&&e.shiftKey))){e.preventDefault();redo();return;}
+});
+
+// ── УТИЛИТЫ ────────────────────────────────────
+function getLineCoord(node){if(!node)return null;if(node.isIntersection)return{x:node.x,y:node.y};return gridLogics[node.type]?.getNodeCoord(node)??null;}
+function getNodeKey(node){const c=getLineCoord(node);return c?`${c.x.toFixed(3)},${c.y.toFixed(3)}`:null;}
+function nodesAreEqual(n1,n2){const c1=getLineCoord(n1),c2=getLineCoord(n2);return c1&&c2&&Math.hypot(c1.x-c2.x,c1.y-c2.y)<1e-6;}
+function coordToNode(c){return{x:c.x,y:c.y,isIntersection:true,type:'intersection'};}
+function pointInPolygon(pt,poly){let inside=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i].x,yi=poly[i].y,xj=poly[j].x,yj=poly[j].y;if(((yi>pt.y)!==(yj>pt.y))&&(pt.x<(xj-xi)*(pt.y-yi)/(yj-yi+1e-9)+xi))inside=!inside;}return inside;}
+function pointToSegmentDist(px,py,a,b){const dx=b.x-a.x,dy=b.y-a.y;if(!dx&&!dy)return Math.hypot(px-a.x,py-a.y);const t=Math.max(0,Math.min(1,((px-a.x)*dx+(py-a.y)*dy)/(dx*dx+dy*dy)));return Math.hypot(px-(a.x+t*dx),py-(a.y+t*dy));}
+function pointOnSegment(pt,a,b){return Math.abs(Math.hypot(pt.x-a.x,pt.y-a.y)+Math.hypot(pt.x-b.x,pt.y-b.y)-Math.hypot(a.x-b.x,a.y-b.y))<1e-6;}
+function segmentIntersection(a1,a2,b1,b2){const d=(a2.x-a1.x)*(b2.y-b1.y)-(a2.y-a1.y)*(b2.x-b1.x);if(Math.abs(d)<1e-10)return null;const t=((b1.x-a1.x)*(b2.y-b1.y)-(b1.y-a1.y)*(b2.x-b1.x))/d,u=((b1.x-a1.x)*(a2.y-a1.y)-(b1.y-a1.y)*(a2.x-a1.x))/d;return(t>1e-8&&t<1-1e-8&&u>1e-8&&u<1-1e-8)?{x:a1.x+t*(a2.x-a1.x),y:a1.y+t*(a2.y-a1.y)}:null;}
+function hexToRgb(hex){return[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];}
+
+// ── СЕТКИ ──────────────────────────────────────
+const gridLogics={
+    square:{
+        getNodeCoord(n){return{x:n.xIdx*gridScale,y:n.yIdx*gridScale};},
+        getNearestNode(x,y){const xi=Math.round(x/gridScale),yi=Math.round(y/gridScale),c=this.getNodeCoord({xIdx:xi,yIdx:yi});return Math.hypot(c.x-x,c.y-y)>SNAP_RADIUS/camera.zoom?null:{xIdx:xi,yIdx:yi};},
+        drawGrid(){ctx.strokeStyle=appMode==='notebook'?'#a8c3e8':'#bbb';ctx.lineWidth=1/camera.zoom;const tl=screenToWorld(0,0),br=screenToWorld(canvas.width,canvas.height);for(let x=Math.floor(tl.x/gridScale)*gridScale;x<br.x;x+=gridScale){ctx.beginPath();ctx.moveTo(x,tl.y);ctx.lineTo(x,br.y);ctx.stroke();}for(let y=Math.floor(tl.y/gridScale)*gridScale;y<br.y;y+=gridScale){ctx.beginPath();ctx.moveTo(tl.x,y);ctx.lineTo(br.x,y);ctx.stroke();}}
+    },
+    triangle:{
+        getNodeCoord(n){const a=gridScale,h=a*Math.sqrt(3)/2,x=n.col*(a/2),y=n.row*h;if((n.row+n.col)%2===0){if(n.vertex===0)return{x,y};if(n.vertex===1)return{x:x+a/2,y:y+h};return{x:x-a/2,y:y+h};}else{if(n.vertex===0)return{x,y:y+h};if(n.vertex===1)return{x:x+a/2,y};return{x:x-a/2,y};}},
+        getNearestNode(x,y){const a=gridScale,h=a*Math.sqrt(3)/2;let min=Infinity,best=null;const tl=screenToWorld(0,0),br=screenToWorld(canvas.width,canvas.height);for(let row=Math.floor(tl.y/h)-1;row*h<br.y+h;row++)for(let col=Math.floor(tl.x/(a/2))-1;col*a/2<br.x+a;col++)for(let v=0;v<3;v++){const c=this.getNodeCoord({row,col,vertex:v});if(!c)continue;const d=Math.hypot(c.x-x,c.y-y);if(d<min){min=d;best={row,col,vertex:v};}}return min>SNAP_RADIUS/camera.zoom?null:best;},
+        drawGrid(){ctx.strokeStyle=appMode==='notebook'?'#a8c3e8':'#bbb';ctx.lineWidth=1/camera.zoom;const a=gridScale,h=a*Math.sqrt(3)/2,tl=screenToWorld(0,0),br=screenToWorld(canvas.width,canvas.height);for(let row=Math.floor(tl.y/h)-1;row*h<br.y+h;row++)for(let col=Math.floor(tl.x/(a/2))-1;col*a/2<br.x+a;col++){ctx.beginPath();if((row+col)%2===0){ctx.moveTo(col*a/2,row*h);ctx.lineTo(col*a/2+a/2,row*h+h);ctx.lineTo(col*a/2-a/2,row*h+h);}else{ctx.moveTo(col*a/2,row*h+h);ctx.lineTo(col*a/2+a/2,row*h);ctx.lineTo(col*a/2-a/2,row*h);}ctx.closePath();ctx.stroke();}}
+    },
+    hexagon:{
+        getNodeCoord(n){const r=gridScale/2,dx=r*Math.sqrt(3),dy=r*1.5,x=r+(n.row%2)*(dx/2)+n.col*dx,y=r+n.row*dy;return{x:x+r*Math.cos(Math.PI/6+(Math.PI/3)*n.vertex),y:y+r*Math.sin(Math.PI/6+(Math.PI/3)*n.vertex)};},
+        getNearestNode(x,y){const r=gridScale/2,dx=r*Math.sqrt(3),dy=r*1.5;let min=Infinity,best=null;const tl=screenToWorld(0,0),br=screenToWorld(canvas.width,canvas.height);for(let row=Math.floor((tl.y-r)/dy)-1;(r+row*dy)<br.y+r;row++)for(let col=Math.floor((tl.x-r)/dx)-1;(r+(row%2)*(dx/2)+col*dx)<br.x+r;col++)for(let v=0;v<6;v++){const c=this.getNodeCoord({row,col,vertex:v});const d=Math.hypot(c.x-x,c.y-y);if(d<min){min=d;best={row,col,vertex:v};}}return min>SNAP_RADIUS/camera.zoom?null:best;},
+        drawGrid(){ctx.strokeStyle=appMode==='notebook'?'#a8c3e8':'#bbb';ctx.lineWidth=1/camera.zoom;const r=gridScale/2,dx=r*Math.sqrt(3),dy=r*1.5,tl=screenToWorld(0,0),br=screenToWorld(canvas.width,canvas.height);for(let row=Math.floor((tl.y-r)/dy)-1;(r+row*dy)<br.y+r;row++)for(let col=Math.floor((tl.x-r)/dx)-1;(r+(row%2)*(dx/2)+col*dx)<br.x+r;col++){ctx.beginPath();for(let i=0;i<6;i++){const c=this.getNodeCoord({row,col,vertex:i});i===0?ctx.moveTo(c.x,c.y):ctx.lineTo(c.x,c.y);}ctx.closePath();ctx.stroke();}}
+    }
+};
+
+// ── БЛИЖАЙШИЙ УЗЕЛ ─────────────────────────────
+function getNearestAnyNode(sx,sy){
+    let minDist=Infinity,best=null;
+    const wp=screenToWorld(sx,sy);
+    if(gridLogics[gridType]){const gn=gridLogics[gridType].getNearestNode(wp.x,wp.y);if(gn){const c=gridLogics[gridType].getNodeCoord(gn),d=Math.hypot(c.x-wp.x,c.y-wp.y);if(d<minDist){minDist=d;best={...gn,type:gridType};}}}
+    getAllIntersectionPoints().forEach(p=>{const d=Math.hypot(p.x-wp.x,p.y-wp.y);if(d<minDist&&d<SNAP_RADIUS/camera.zoom){minDist=d;best={x:p.x,y:p.y,isIntersection:true,type:'intersection'};}});
+    if(best&&appMode==='notebook'){const c=getLineCoord(best);if(!c||!inPage(c.x,c.y))return null;}
+    return minDist>SNAP_RADIUS/camera.zoom?null:best;
+}
+
+// ── АВТОЗАЛИВКА ────────────────────────────────
+function autoFillArea(sx,sy){
+    const NB=appMode==='notebook';
+    if(!userLines.length&&!NB)return;
+    let minX,minY,maxX,maxY;
+    if(NB){minX=0;minY=0;maxX=PAGE_W;maxY=PAGE_H;}
+    else{const coords=userLines.flatMap(l=>[getLineCoord(l.from),getLineCoord(l.to)]).filter(Boolean);
+    const pad=gridScale*2;minX=Math.min(...coords.map(c=>c.x))-pad;minY=Math.min(...coords.map(c=>c.y))-pad;
+    maxX=Math.max(...coords.map(c=>c.x))+pad;maxY=Math.max(...coords.map(c=>c.y))+pad;}
+    const ppu=Math.min(3,1800/Math.max(maxX-minX,maxY-minY,1));
+    const w=Math.ceil((maxX-minX)*ppu),h=Math.ceil((maxY-minY)*ppu);if(w<2||h<2)return;
+    const off=document.createElement('canvas');off.width=w;off.height=h;
+    const octx=off.getContext('2d');octx.fillStyle='#fff';octx.fillRect(0,0,w,h);
+    octx.strokeStyle='#000';octx.lineWidth=Math.max(2,ppu*2.5);octx.lineCap='round';
+    userLines.forEach(l=>{const f=getLineCoord(l.from),t=getLineCoord(l.to);if(!f||!t)return;octx.beginPath();octx.moveTo((f.x-minX)*ppu,(f.y-minY)*ppu);octx.lineTo((t.x-minX)*ppu,(t.y-minY)*ppu);octx.stroke();});
+    if(NB){octx.strokeRect(0,0,w,h);}
+    const wp=screenToWorld(sx,sy),fx=Math.round((wp.x-minX)*ppu),fy=Math.round((wp.y-minY)*ppu);
+    if(fx<0||fx>=w||fy<0||fy>=h)return;
+    const img=octx.getImageData(0,0,w,h),src=img.data;
+    if(src[(fy*w+fx)*4]<200)return;
+    const filled=new Uint8Array(w*h),queue=new Int32Array(w*h*2);
+    let qH=0,qT=0;queue[qT++]=fx;queue[qT++]=fy;filled[fy*w+fx]=1;
+    while(qH<qT){const px=queue[qH++],py=queue[qH++];const push=(nx,ny)=>{if(nx<0||nx>=w||ny<0||ny>=h||filled[ny*w+nx]||src[(ny*w+nx)*4]<200)return;filled[ny*w+nx]=1;queue[qT++]=nx;queue[qT++]=ny;};push(px-1,py);push(px+1,py);push(px,py-1);push(px,py+1);}
+    let count=0;for(let i=0;i<filled.length;i++)if(filled[i])count++;
+    if(!count||count>w*h*(NB?0.97:0.8))return;
+    const fImg=new ImageData(w,h),[r,g,b]=hexToRgb(currentFillColor);
+    for(let i=0;i<w*h;i++)if(filled[i]){fImg.data[i*4]=r;fImg.data[i*4+1]=g;fImg.data[i*4+2]=b;fImg.data[i*4+3]=110;}
+    const oc=document.createElement('canvas');oc.width=w;oc.height=h;oc.getContext('2d').putImageData(fImg,0,0);
+    const pf={src:oc.toDataURL('image/png'),worldX:minX,worldY:minY,worldW:maxX-minX,worldH:maxY-minY,imgW:w,imgH:h,ppu,filled,img:oc};
+    saveState();pixelFills.push(pf);draw();
+}
+
+// ── ОТРИСОВКА ──────────────────────────────────
+function draw(){
+    ctx.save();ctx.clearRect(0,0,canvas.width,canvas.height);
+    const NB=appMode==='notebook';
+    if(NB&&!exportingPage){ctx.fillStyle='#cfc8b8';ctx.fillRect(0,0,canvas.width,canvas.height);}
+    ctx.translate(camera.x,camera.y);ctx.scale(camera.zoom,camera.zoom);
+    if(NB){
+        ctx.save();if(!exportingPage){ctx.shadowColor='rgba(0,0,0,.28)';ctx.shadowBlur=18;ctx.shadowOffsetY=4;}
+        ctx.fillStyle='#fdfcf7';ctx.fillRect(0,0,PAGE_W,PAGE_H);ctx.restore();
+        ctx.save();ctx.beginPath();ctx.rect(0,0,PAGE_W,PAGE_H);ctx.clip();
+    }
+    if(gridLogics[gridType])gridLogics[gridType].drawGrid();
+    if(NB){
+        ctx.save();ctx.strokeStyle='#e57373';ctx.lineWidth=Math.max(2,1.6/camera.zoom);ctx.beginPath();ctx.moveTo(PAGE_W-MARGIN,0);ctx.lineTo(PAGE_W-MARGIN,PAGE_H);ctx.stroke();
+        ctx.fillStyle='#9a9a9a';ctx.font='22px sans-serif';ctx.textAlign='right';ctx.fillText(String(nbCur().cur+1),PAGE_W-MARGIN/2+8,PAGE_H-18);ctx.restore();
+    }
+    // Заливки
+    ctx.save();
+    fills.forEach(fill=>{const poly=fill.contour.map(getLineCoord);ctx.beginPath();poly.forEach((p,i)=>i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));ctx.closePath();ctx.fillStyle=fill.color;ctx.globalAlpha=0.4;ctx.fill();});
+    ctx.globalAlpha=1;pixelFills.forEach(pf=>{if(pf.img)ctx.drawImage(pf.img,pf.worldX,pf.worldY,pf.worldW,pf.worldH);});
+    ctx.restore();
+    // Линии
+    ctx.save();ctx.lineCap='round';
+    userLines.forEach((line,idx)=>{
+        const from=getLineCoord(line.from),to=getLineCoord(line.to);if(!from||!to)return;
+        const isHov=deleteMode&&idx===hoveredLineIdx;
+        ctx.strokeStyle=isHov?'#e53935':(line.color||'#000');ctx.lineWidth=(isHov?7:(line.thickness||4))/camera.zoom;
+        ctx.setLineDash(line.style==='dashed'?[14/camera.zoom,8/camera.zoom]:[]);
+        ctx.beginPath();ctx.moveTo(from.x,from.y);ctx.lineTo(to.x,to.y);ctx.stroke();
+    });ctx.setLineDash([]);ctx.restore();
+    // Выделенный сегмент
+    if(deleteBetweenMode&&hoveredSegment){const from=getLineCoord(hoveredSegment.from),to=getLineCoord(hoveredSegment.to);ctx.save();ctx.strokeStyle='#e53935';ctx.lineWidth=8/camera.zoom;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(from.x,from.y);ctx.lineTo(to.x,to.y);ctx.stroke();ctx.restore();}
+    // Контур заливки
+    if(currentContour.length){ctx.save();ctx.strokeStyle='#43a047';ctx.lineWidth=2.5/camera.zoom;ctx.setLineDash([6/camera.zoom,4/camera.zoom]);ctx.beginPath();currentContour.forEach((n,i)=>{const c=getLineCoord(n);i===0?ctx.moveTo(c.x,c.y):ctx.lineTo(c.x,c.y);});ctx.stroke();ctx.setLineDash([]);currentContour.forEach((n,i)=>{const c=getLineCoord(n);ctx.beginPath();ctx.arc(c.x,c.y,4/camera.zoom,0,Math.PI*2);ctx.fillStyle=i===0?'#e53935':'#43a047';ctx.globalAlpha=0.9;ctx.fill();});ctx.restore();}
+    // Временная линия
+    if(tempLine){const from=getLineCoord(tempLine.from),to=getLineCoord(tempLine.to);if(from&&to){ctx.save();ctx.strokeStyle='#ff9800';ctx.lineWidth=2.5/camera.zoom;ctx.lineCap='round';ctx.setLineDash([8/camera.zoom,5/camera.zoom]);ctx.beginPath();ctx.moveTo(from.x,from.y);ctx.lineTo(to.x,to.y);ctx.stroke();ctx.setLineDash([]);ctx.restore();}}
+    // Hover узел
+    if(hoveredNode&&!isDrawing){const c=getLineCoord(hoveredNode);if(c){ctx.save();ctx.beginPath();ctx.arc(c.x,c.y,7/camera.zoom,0,Math.PI*2);ctx.strokeStyle='#ff9800';ctx.lineWidth=2/camera.zoom;ctx.globalAlpha=0.75;ctx.stroke();ctx.restore();}}
+    // Selected узел
+    if(selectedNode){const c=getLineCoord(selectedNode);if(c){ctx.save();ctx.beginPath();ctx.arc(c.x,c.y,7/camera.zoom,0,Math.PI*2);ctx.fillStyle='#ff9800';ctx.globalAlpha=0.9;ctx.fill();ctx.restore();}}
+    if(NB){ctx.restore();if(!exportingPage){ctx.strokeStyle='rgba(0,0,0,.18)';ctx.lineWidth=1/camera.zoom;ctx.strokeRect(0,0,PAGE_W,PAGE_H);}}
+    ctx.restore();
+}
+
+// ── КАМЕРА ─────────────────────────────────────
+function handlePanStart(x,y){isPanning=true;panStart.x=x-camera.x;panStart.y=y-camera.y;canvasContainer.style.cursor='grabbing';}
+function handlePanMove(x,y){if(!isPanning)return;camera.x=x-panStart.x;camera.y=y-panStart.y;draw();}
+function handlePanEnd(){if(isPanning)markDirty();isPanning=false;canvasContainer.style.cursor='grab';}
+function handleZoom(delta,x,y){const wp=screenToWorld(x,y),nz=Math.max(0.1,Math.min(10,camera.zoom*delta));camera.x=x-wp.x*nz;camera.y=y-wp.y*nz;camera.zoom=nz;draw();markDirty();}
+
+// ── МЫШЬ ───────────────────────────────────────
+canvas.addEventListener('mousedown',e=>{
+    if(e.button===1){handlePanStart(e.clientX,e.clientY);e.preventDefault();return;}
+    if(e.button!==0)return;
+    const rect=canvas.getBoundingClientRect(),x=e.clientX-rect.left,y=e.clientY-rect.top;
+    if(autoFillMode){autoFillArea(x,y);return;}
+    if(fillContourMode){handleContourTap(x,y);return;}
+    if(deleteMode||deleteBetweenMode||removeFillMode)return;
+    const node=getNearestAnyNode(x,y);
+    if(node){isDrawing=true;selectedNode=node;hoveredNode=null;draw();}
+    else handlePanStart(e.clientX,e.clientY);
+});
+canvas.addEventListener('mousemove',e=>{
+    if(isPanning){handlePanMove(e.clientX,e.clientY);return;}
+    const rect=canvas.getBoundingClientRect(),x=e.clientX-rect.left,y=e.clientY-rect.top;
+    if(fillContourMode&&currentContour.length){const last=currentContour[currentContour.length-1],hn=getNearestAnyNode(x,y);tempLine={from:last,to:hn||coordToNode(screenToWorld(x,y))};draw();return;}
+    if(deleteMode){updateHoveredLine(x,y);draw();return;}
+    if(deleteBetweenMode){updateHoveredSegment(x,y);draw();return;}
+    if(isDrawing&&selectedNode){const hn=getNearestAnyNode(x,y);tempLine={from:selectedNode,to:hn||coordToNode(screenToWorld(x,y))};draw();return;}
+    if(!deleteMode&&!deleteBetweenMode&&!fillContourMode&&!autoFillMode&&!removeFillMode){const nw=getNearestAnyNode(x,y);if(getNodeKey(nw)!==getNodeKey(hoveredNode)){hoveredNode=nw;draw();}}
+});
+canvas.addEventListener('mouseup',e=>{
+    if(isPanning){handlePanEnd();return;}
+    if(!isDrawing||!selectedNode){isDrawing=false;return;}
+    const rect=canvas.getBoundingClientRect();finishLine(e.clientX-rect.left,e.clientY-rect.top);
+});
+canvas.addEventListener('click',e=>{
+    const rect=canvas.getBoundingClientRect();handleActionClick(e.clientX-rect.left,e.clientY-rect.top);
+});
+canvas.addEventListener('wheel',e=>{e.preventDefault();handleZoom(e.deltaY>0?0.9:1.1,e.clientX,e.clientY);},{passive:false});
+
+// ── TOUCH ──────────────────────────────────────
+canvas.addEventListener('touchstart',e=>{
+    e.preventDefault();
+    const rect=canvas.getBoundingClientRect();
+    if(e.touches.length===1){
+        const t=e.touches[0],x=t.clientX-rect.left,y=t.clientY-rect.top;
+        touchStartPos={x:t.clientX,y:t.clientY};touchHasMoved=false;
+        if(autoFillMode||removeFillMode){pendingTap={x,y};return;}
+        if(fillContourMode){handleContourTap(x,y);return;}
+        if(deleteMode){updateHoveredLine(x,y);draw();return;}
+        if(deleteBetweenMode){updateHoveredSegment(x,y);draw();return;}
+        touchStartNode=getNearestAnyNode(x,y);
+    }else if(e.touches.length===2){
+        pendingTap=null;isDrawing=false;selectedNode=null;tempLine=null;isPanning=true;touchStartNode=null;touchHasMoved=true;
+        lastTouchDistance=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+        lastTouchCenter=null;
+    }
+},{passive:false});
+
+canvas.addEventListener('touchmove',e=>{
+    e.preventDefault();
+    const rect=canvas.getBoundingClientRect();
+    if(e.touches.length===1){
+        const t=e.touches[0],x=t.clientX-rect.left,y=t.clientY-rect.top;
+        const moved=touchStartPos?Math.hypot(t.clientX-touchStartPos.x,t.clientY-touchStartPos.y):0;
+        if(!touchHasMoved&&moved>PAN_THRESHOLD){
+            touchHasMoved=true;
+            if(pendingTap){pendingTap=null;handlePanStart(touchStartPos.x,touchStartPos.y);}
+            else if(touchStartNode){isDrawing=true;selectedNode=touchStartNode;hoveredNode=null;}
+            else handlePanStart(touchStartPos.x,touchStartPos.y);
+        }
+        if(isDrawing&&selectedNode){const hn=getNearestAnyNode(x,y);tempLine={from:selectedNode,to:hn||coordToNode(screenToWorld(x,y))};draw();}
+        else if(isPanning)handlePanMove(t.clientX,t.clientY);
+        else if(deleteMode){updateHoveredLine(x,y);draw();}
+        else if(deleteBetweenMode){updateHoveredSegment(x,y);draw();}
+    }else if(e.touches.length===2){
+        const tc={x:(e.touches[0].clientX+e.touches[1].clientX)/2,y:(e.touches[0].clientY+e.touches[1].clientY)/2};
+        const nd=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+        if(lastTouchCenter){camera.x+=tc.x-lastTouchCenter.x;camera.y+=tc.y-lastTouchCenter.y;}
+        handleZoom(nd/lastTouchDistance,tc.x,tc.y);
+        lastTouchCenter=tc;lastTouchDistance=nd;
+    }
+},{passive:false});
+
+canvas.addEventListener('touchend',e=>{
+    const resetTouch=()=>{touchStartPos=null;touchStartNode=null;touchHasMoved=false;lastTouchDistance=0;lastTouchCenter=null;pendingTap=null;};
+    if(pendingTap&&!touchHasMoved&&e.touches.length===0){const pt=pendingTap;pendingTap=null;if(autoFillMode)autoFillArea(pt.x,pt.y);else if(removeFillMode)handleActionClick(pt.x,pt.y);resetTouch();return;}
+    if(deleteMode&&!isPanning){if(hoveredLineIdx!==-1)handleActionClick(0,0);else draw();resetTouch();return;}
+    if(deleteBetweenMode&&!isPanning){if(hoveredSegment)handleActionClick(0,0);else draw();resetTouch();return;}
+    if(isDrawing&&selectedNode&&tempLine?.to){const tc=getLineCoord(tempLine.to);if(tc){const sp=worldToScreen(tc.x,tc.y);finishLine(sp.x,sp.y);}else{isDrawing=false;selectedNode=null;tempLine=null;draw();}}
+    handlePanEnd();resetTouch();
+},{passive:false});
+
+// ── ОБЩАЯ ЛОГИКА ───────────────────────────────
+function handleContourTap(x,y){
+    const node=getNearestAnyNode(x,y);if(!node)return;
+    if(currentContour.length>0&&nodesAreEqual(node,currentContour[0])){currentContour.push(node);if(currentContour.length>2){saveState();fills.push({contour:[...currentContour],color:currentFillColor});}currentContour=[];}
+    else currentContour.push(node);
+    draw();
+}
+function finishLine(x,y){
+    const endNode=getNearestAnyNode(x,y);
+    if(endNode){const sc=getLineCoord(selectedNode),ec=getLineCoord(endNode);if(sc&&ec&&Math.hypot(sc.x-ec.x,sc.y-ec.y)>1e-6){saveState();userLines.push({from:selectedNode,to:endNode,color:currentLineColor,thickness:currentLineThickness,style:currentLineStyle});invalidateIntersectionCache();}}
+    isDrawing=false;selectedNode=null;tempLine=null;draw();
+}
+function handleActionClick(x,y){
+    const wp=screenToWorld(x,y);
+    if(removeFillMode){let removed=false;for(let i=fills.length-1;i>=0;i--){if(pointInPolygon(wp,fills[i].contour.map(getLineCoord))){saveState();fills.splice(i,1);removed=true;break;}}if(!removed)for(let i=pixelFills.length-1;i>=0;i--){const pf=pixelFills[i],lx=Math.round((wp.x-pf.worldX)*pf.ppu),ly=Math.round((wp.y-pf.worldY)*pf.ppu);if(pf.filled&&lx>=0&&lx<pf.imgW&&ly>=0&&ly<pf.imgH&&pf.filled[ly*pf.imgW+lx]){pixelFills.splice(i,1);removed=true;break;}}draw();return;}
+    if(deleteMode){if(hoveredLineIdx!==-1){saveState();userLines.splice(hoveredLineIdx,1);invalidateIntersectionCache();}hoveredLineIdx=-1;draw();return;}
+    if(deleteBetweenMode){if(hoveredSegment){saveState();const{from,to,lineIdx,originalLine}=hoveredSegment;userLines.splice(lineIdx,1);if(!nodesAreEqual(originalLine.from,from))userLines.push({from:originalLine.from,to:from,color:originalLine.color,thickness:originalLine.thickness,style:originalLine.style});if(!nodesAreEqual(originalLine.to,to))userLines.push({from:to,to:originalLine.to,color:originalLine.color,thickness:originalLine.thickness,style:originalLine.style});invalidateIntersectionCache();}hoveredSegment=null;draw();return;}
+}
+function updateHoveredLine(x,y){const wp=screenToWorld(x,y),snapR=(IS_TOUCH?25:10)/camera.zoom;hoveredLineIdx=userLines.reduce((best,line,idx)=>{const f=getLineCoord(line.from),t=getLineCoord(line.to);if(!f||!t)return best;const d=pointToSegmentDist(wp.x,wp.y,f,t);return d<snapR&&(best===-1||d<pointToSegmentDist(wp.x,wp.y,getLineCoord(userLines[best].from),getLineCoord(userLines[best].to)))?idx:best;},-1);}
+function updateHoveredSegment(x,y){hoveredSegment=null;let minDist=Infinity;const wp=screenToWorld(x,y),allPts=getAllIntersectionPoints(),snapR=(IS_TOUCH?25:10)/camera.zoom;userLines.forEach((line,li)=>{const from=getLineCoord(line.from),to=getLineCoord(line.to);if(!from||!to)return;const bps=[line.from];allPts.forEach(pt=>{if(pointOnSegment(pt,from,to))bps.push(coordToNode(pt));});bps.push(line.to);const unique=[];bps.forEach(bp=>{if(!unique.some(u=>nodesAreEqual(u,bp)))unique.push(bp);});unique.sort((a,b)=>Math.hypot(getLineCoord(a).x-from.x,getLineCoord(a).y-from.y)-Math.hypot(getLineCoord(b).x-from.x,getLineCoord(b).y-from.y));for(let i=0;i<unique.length-1;i++){const p1=unique[i],p2=unique[i+1],c1=getLineCoord(p1),c2=getLineCoord(p2);const d=pointToSegmentDist(wp.x,wp.y,c1,c2);if(d<snapR&&d<minDist){minDist=d;hoveredSegment={from:p1,to:p2,lineIdx:li,originalLine:line};}}});}
+
+// ── КНОПКИ ─────────────────────────────────────
+drawModeBtn.addEventListener('click',   cancelAllModes);
+startFillBtn.addEventListener('click',()=>{if(fillContourMode){cancelAllModes();return;}cancelAllModes();setMode('fillContourMode');});
+autoFillBtn.addEventListener('click',()=>{if(autoFillMode){cancelAllModes();return;}cancelAllModes();setMode('autoFillMode');});
+removeFillBtn.addEventListener('click',()=>{if(removeFillMode){cancelAllModes();return;}cancelAllModes();setMode('removeFillMode');});
+deleteLineBtn.addEventListener('click',()=>{if(deleteMode){cancelAllModes();return;}cancelAllModes();setMode('deleteMode');});
+deleteBetweenBtn.addEventListener('click',()=>{if(deleteBetweenMode){cancelAllModes();return;}cancelAllModes();setMode('deleteBetweenMode');});
+clearBtn.addEventListener('click',()=>{if((userLines.length||fills.length||pixelFills.length)&&!confirm(appMode==='notebook'?'Очистить эту страницу?':'Очистить всё поле?'))return;saveState();userLines=[];fills=[];pixelFills=[];selectedNode=null;tempLine=null;currentContour=[];invalidateIntersectionCache();cancelAllModes();draw();});
+undoBtn.addEventListener('click',undo);
+redoBtn.addEventListener('click',redo);
+lineColorInput.addEventListener('input',      e=>{currentLineColor=e.target.value;});
+fillColorInput.addEventListener('input',      e=>{currentFillColor=e.target.value;});
+lineThicknessSelect.addEventListener('change',e=>{currentLineThickness=parseInt(e.target.value);});
+lineStyleSelect.addEventListener('change',    e=>{currentLineStyle=e.target.value;});
+gridTypeSelect.addEventListener('change',     e=>{if(appMode==='notebook'){switchNotebook(e.target.value);}else{gridType=e.target.value;markDirty();draw();}});
+gridScaleMinus.addEventListener('click',()=>{if(appMode==='notebook')return;gridScale=Math.max(20,gridScale-10);gridScaleDisplay.textContent=gridScale;invalidateIntersectionCache();markDirty();draw();});
+gridScalePlus.addEventListener('click', ()=>{if(appMode==='notebook')return;gridScale=Math.min(200,gridScale+10);gridScaleDisplay.textContent=gridScale;invalidateIntersectionCache();markDirty();draw();});
+
+// ── ФАЙЛ ───────────────────────────────────────
+// ── ХРАНИЛИЩЕ (IndexedDB, запасной вариант — localStorage) ──
+const DB_NAME='tetrad-db', DB_STORE='kv';
+let dbPromise=null;
+function openDB(){
+    if(dbPromise)return dbPromise;
+    dbPromise=new Promise((res)=>{
+        try{
+            if(!window.indexedDB){res(null);return;}
+            const rq=indexedDB.open(DB_NAME,1);
+            rq.onupgradeneeded=()=>rq.result.createObjectStore(DB_STORE);
+            rq.onsuccess=()=>res(rq.result);
+            rq.onerror=()=>res(null);
+        }catch(e){res(null);}
+    });
+    return dbPromise;
+}
+async function kvGet(key){
+    const db=await openDB();
+    if(!db){try{const v=localStorage.getItem('tetrad:'+key);return v?JSON.parse(v):undefined;}catch(e){return undefined;}}
+    return new Promise(res=>{try{const rq=db.transaction(DB_STORE,'readonly').objectStore(DB_STORE).get(key);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>res(undefined);}catch(e){res(undefined);}});
+}
+async function kvSet(key,val){
+    const db=await openDB();
+    if(!db){try{localStorage.setItem('tetrad:'+key,JSON.stringify(val));}catch(e){}return;}
+    return new Promise(res=>{try{const tx=db.transaction(DB_STORE,'readwrite');tx.objectStore(DB_STORE).put(val,key);tx.oncomplete=()=>res();tx.onerror=()=>res();}catch(e){res();}});
+}
+
+// ── СЕРИАЛИЗАЦИЯ АВТОЗАЛИВКИ ──
+function serPF(pf){return{src:pf.src,worldX:pf.worldX,worldY:pf.worldY,worldW:pf.worldW,worldH:pf.worldH,imgW:pf.imgW,imgH:pf.imgH,ppu:pf.ppu};}
+function hydratePF(o){
+    if(!o||!o.src)return null;
+    const pf=Object.assign({},o,{img:null,filled:null});
+    const im=new Image();
+    im.onload=()=>{
+        try{
+            const c=document.createElement('canvas');c.width=pf.imgW;c.height=pf.imgH;
+            const cx=c.getContext('2d');cx.drawImage(im,0,0);
+            const d=cx.getImageData(0,0,pf.imgW,pf.imgH).data,f=new Uint8Array(pf.imgW*pf.imgH);
+            for(let i=0;i<f.length;i++)if(d[i*4+3]>0)f[i]=1;
+            pf.filled=f;
+        }catch(e){}
+        pf.img=im;draw();
+    };
+    im.src=pf.src;
+    return pf;
+}
+function serDrawing(d){return{userLines:d.userLines||[],fills:d.fills||[],pixelFills:(d.pixelFills||[]).map(serPF)};}
+function hydDrawing(d){d=d||{};return{userLines:d.userLines||[],fills:d.fills||[],pixelFills:(d.pixelFills||[]).map(hydratePF).filter(Boolean)};}
+
+// ── МОДЕЛЬ: ПОЛЕ И ТРИ ТЕТРАДИ ──
+const NB_NAMES={square:'Клетка',triangle:'Треугольники',hexagon:'Шестиугольники'};
+const emptyPage=()=>({userLines:[],fills:[],pixelFills:[]});
+let field={userLines:[],fills:[],pixelFills:[],gridType:'square',gridScale:50,camera:{x:0,y:0,zoom:1}};
+let notebooks={};
+let currentNotebook='square';
+function freshNotebooks(){const n={};for(const t of Object.keys(NB_NAMES))n[t]={pages:[emptyPage()],cur:0,camera:null};return n;}
+notebooks=freshNotebooks();
+function nbCur(){return notebooks[currentNotebook];}
+
+function storeCurrent(){
+    if(appMode==='field'){
+        field.userLines=userLines;field.fills=fills;field.pixelFills=pixelFills;
+        field.gridType=gridType;field.gridScale=gridScale;field.camera={...camera};
+    }else{
+        const nb=nbCur();nb.pages[nb.cur]={userLines,fills,pixelFills};nb.camera={...camera};
+    }
+}
+function loadCurrent(fit){
+    if(appMode==='field'){
+        userLines=field.userLines;fills=field.fills;pixelFills=field.pixelFills;
+        gridType=field.gridType;gridScale=field.gridScale;Object.assign(camera,field.camera);
+    }else{
+        const nb=nbCur(),p=nb.pages[nb.cur];
+        userLines=p.userLines;fills=p.fills;pixelFills=p.pixelFills;
+        gridType=currentNotebook;gridScale=NB_SCALE;
+        if(fit||!nb.camera)fitPage();else Object.assign(camera,nb.camera);
+    }
+    history=[];redoStack=[];updateHistoryButtons();
+    selectedNode=null;tempLine=null;currentContour=[];hoveredNode=null;
+    invalidateIntersectionCache();
+    syncUI();draw();
+}
+function fitPage(){
+    const W=canvas.width||canvasContainer.clientWidth,H=canvas.height||canvasContainer.clientHeight;
+    const pad=24,bottom=appMode==='notebook'?64:0;
+    const z=Math.min((W-pad*2)/PAGE_W,(H-pad*2-bottom)/PAGE_H);
+    camera.zoom=Math.max(0.1,Math.min(10,z));
+    camera.x=(W-PAGE_W*camera.zoom)/2;camera.y=pad+((H-pad*2-bottom)-PAGE_H*camera.zoom)/2;
+}
+
+// ── UI ──
+const appModeBtn=document.getElementById('appModeBtn');
+const pageLabel=document.getElementById('pageLabel');
+const prevPageBtn=document.getElementById('prevPageBtn');
+const nextPageBtn=document.getElementById('nextPageBtn');
+const addPageBtn=document.getElementById('addPageBtn');
+const delPageBtn=document.getElementById('delPageBtn');
+const gridTypeLabel=document.getElementById('gridTypeLabel');
+const flipCanvas=document.getElementById('flipCanvas');
+function syncUI(){
+    const NB=appMode==='notebook';
+    document.body.classList.toggle('notebook',NB);
+    appModeBtn.innerHTML=NB?'∞<span>Поле</span>':'📓<span>Тетрадь</span>';
+    appModeBtn.title=NB?'Перейти на бесконечное поле':'Перейти в тетрадь';
+    gridTypeLabel.textContent=NB?'Тетрадь':'Тип';
+    gridTypeSelect.value=gridType;gridScaleDisplay.textContent=gridScale;
+    if(NB){const nb=nbCur();pageLabel.textContent=`${nb.cur+1} / ${nb.pages.length}`;prevPageBtn.disabled=nb.cur===0;delPageBtn.disabled=false;}
+}
+appModeBtn.addEventListener('click',()=>{
+    storeCurrent();cancelAllModes();
+    appMode=appMode==='field'?'notebook':'field';
+    loadCurrent(false);markDirty();
+    showModeHint(appMode==='notebook'?`📓 Тетрадь «${NB_NAMES[currentNotebook]}»`:'∞ Бесконечное поле');
+    setTimeout(()=>{if(!deleteMode&&!deleteBetweenMode&&!fillContourMode&&!autoFillMode&&!removeFillMode)showModeHint('');},1400);
+});
+function switchNotebook(type){
+    storeCurrent();currentNotebook=type;loadCurrent(false);markDirty();
+    showModeHint(`📓 Тетрадь «${NB_NAMES[type]}»`);setTimeout(()=>showModeHint(''),1400);
+}
+
+// ── ПЕРЕЛИСТЫВАНИЕ ──
+let flipping=false;
+const flipSrc=document.createElement('canvas');
+function snapshotCanvas(){
+    const px=camera.x,py=camera.y,pw=PAGE_W*camera.zoom,ph=PAGE_H*camera.zoom;
+    flipSrc.width=Math.max(1,Math.round(pw));flipSrc.height=Math.max(1,Math.round(ph));
+    const fx=flipSrc.getContext('2d');fx.clearRect(0,0,flipSrc.width,flipSrc.height);
+    fx.drawImage(canvas,-px,-py);
+    return{sx:px,sy:py,sw:pw,sh:ph};
+}
+// «Гибкая» страница: лист изгибается дугой, свободный край обгоняет корешок
+function renderFlip(fx,r,t,dir){
+    fx.clearRect(0,0,flipCanvas.width,flipCanvas.height);
+    const N=48,W=r.sw,H=r.sh,du=W/N,f=W*2.6;
+    const spineX=dir>0?r.sx:r.sx+W,cy=r.sy+H/2,cx=r.sx+W/2;
+    const ease=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+    const A=ease*Math.PI,bend=1.1*Math.sin(Math.PI*t);
+    // тень на нижней странице
+    const g=fx.createLinearGradient(r.sx,0,r.sx+W,0);
+    const sh=.22*Math.sin(Math.PI*t);
+    if(dir>0){g.addColorStop(0,`rgba(0,0,0,${sh})`);g.addColorStop(1,'rgba(0,0,0,0)');}
+    else{g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,`rgba(0,0,0,${sh})`);}
+    fx.fillStyle=g;fx.fillRect(r.sx,r.sy,W,H);
+    let x=0,z=0;const pts=[];
+    for(let i=0;i<=N;i++){
+        const u=i/N;
+        pts.push({x,z});
+        const a=Math.min(Math.PI,A+bend*u*u*(1-ease*.6));
+        x+=Math.cos(a)*du;z+=Math.sin(a)*du;
+    }
+    const proj=(q)=>{const pp=f/(f-q.z*.9);const X=spineX+dir*q.x;return{X:cx+(X-cx)*pp,p:pp};};
+    for(let i=0;i<N;i++){
+        const p0=proj(pts[i]),p1=proj(pts[i+1]);
+        let x0=p0.X,x1=p1.X;const back=dir>0?x1<x0:x1>x0;
+        const left=Math.min(x0,x1),w=Math.abs(x1-x0)+.8,pm=(p0.p+p1.p)/2,h=H*pm,top=cy-h/2;
+        const nx=(pts[i+1].x-pts[i].x)/du; // cos угла
+        const light=back?.78+.18*Math.abs(nx):.62+.38*Math.abs(nx);
+        const srcI=dir>0?i:N-1-i;
+        const sxs=srcI*flipSrc.width/N,sws=flipSrc.width/N;
+        if(!back){
+            fx.drawImage(flipSrc,sxs,0,sws,flipSrc.height,left,top,w,h);
+        }else{
+            fx.fillStyle='#f7f4ea';fx.fillRect(left,top,w,h);
+        }
+        if(light<1){fx.fillStyle=`rgba(40,30,10,${(1-light)*.55})`;fx.fillRect(left,top,w,h);}
+    }
+}
+function animateFlip(dir,r){
+    const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if(reduce)return Promise.resolve();
+    flipCanvas.width=canvas.width;flipCanvas.height=canvas.height;
+    flipCanvas.style.width=canvas.width+'px';flipCanvas.style.height=canvas.height+'px';
+    flipCanvas.style.display='block';
+    const fx=flipCanvas.getContext('2d'),D=800,t0=performance.now();
+    return new Promise(res=>{
+        const step=now=>{
+            const t=Math.min(1,(now-t0)/D);
+            renderFlip(fx,r,t,dir);
+            if(t<1)requestAnimationFrame(step);
+            else{fx.clearRect(0,0,flipCanvas.width,flipCanvas.height);flipCanvas.style.display='none';res();}
+        };
+        requestAnimationFrame(step);
+    });
+}
+async function gotoPage(idx,dir){
+    if(flipping)return;const nb=nbCur();if(idx<0||idx>=nb.pages.length||idx===nb.cur)return;
+    flipping=true;cancelAllModes();
+    const r=snapshotCanvas();
+    storeCurrent();nb.cur=idx;
+    const cam={...camera};loadCurrent(false);Object.assign(camera,cam);draw();
+    markDirty();
+    await animateFlip(dir,r);
+    flipping=false;
+}
+function turnPage(dir){
+    const nb=nbCur();
+    if(dir>0&&nb.cur===nb.pages.length-1){addPage();return;}
+    gotoPage(nb.cur+dir,dir);
+}
+async function addPage(){
+    if(flipping)return;const nb=nbCur();storeCurrent();
+    nb.pages.splice(nb.cur+1,0,emptyPage());
+    const r=snapshotCanvas();flipping=true;cancelAllModes();
+    nb.cur++;const cam={...camera};loadCurrent(false);Object.assign(camera,cam);draw();markDirty();
+    await animateFlip(1,r);flipping=false;
+}
+function deletePage(){
+    const nb=nbCur();
+    if(!confirm(`Удалить страницу ${nb.cur+1}?`))return;
+    nb.pages.splice(nb.cur,1);if(!nb.pages.length)nb.pages.push(emptyPage());
+    nb.cur=Math.min(nb.cur,nb.pages.length-1);
+    const cam={...camera};loadCurrent(false);Object.assign(camera,cam);draw();markDirty();
+}
+prevPageBtn.addEventListener('click',()=>turnPage(-1));
+nextPageBtn.addEventListener('click',()=>turnPage(1));
+addPageBtn.addEventListener('click',addPage);
+delPageBtn.addEventListener('click',deletePage);
+
+// ── PNG ──
+savePngBtn.addEventListener('click',()=>{
+    let url,name;
+    if(appMode==='notebook'){
+        const ow=canvas.width,oh=canvas.height,cam={...camera},hn=hoveredNode,sn=selectedNode;
+        const k=2;canvas.width=PAGE_W*k;canvas.height=PAGE_H*k;camera.x=0;camera.y=0;camera.zoom=k;
+        exportingPage=true;hoveredNode=null;selectedNode=null;draw();
+        url=canvas.toDataURL('image/png');
+        exportingPage=false;canvas.width=ow;canvas.height=oh;Object.assign(camera,cam);hoveredNode=hn;selectedNode=sn;draw();
+        name=`tetrad-${currentNotebook}-page${nbCur().cur+1}.png`;
+    }else{url=canvas.toDataURL('image/png');name='tetrad-field.png';}
+    const a=document.createElement('a');a.download=name;a.href=url;document.body.appendChild(a);a.click();a.remove();
+});
+
+// ── ЭКСПОРТ / ИМПОРТ ──
+function fullState(){
+    storeCurrent();
+    const nbs={};for(const t in notebooks)nbs[t]={cur:notebooks[t].cur,camera:notebooks[t].camera,pages:notebooks[t].pages.map(serDrawing)};
+    return{app:'tetrad',version:2,appMode,currentNotebook,
+        field:{...serDrawing(field),gridType:field.gridType,gridScale:field.gridScale,camera:field.camera},
+        notebooks:nbs};
+}
+function applyFullState(s){
+    const f=s.field||{};
+    field={...hydDrawing(f),gridType:f.gridType||'square',gridScale:f.gridScale||50,camera:f.camera||{x:0,y:0,zoom:1}};
+    notebooks=freshNotebooks();
+    for(const t in NB_NAMES){const n=s.notebooks&&s.notebooks[t];if(n&&n.pages&&n.pages.length){notebooks[t]={pages:n.pages.map(hydDrawing),cur:Math.min(n.cur||0,n.pages.length-1),camera:n.camera||null};}}
+    currentNotebook=NB_NAMES[s.currentNotebook]?s.currentNotebook:'square';
+    appMode=s.appMode==='notebook'?'notebook':'field';
+    loadCurrent(false);
+}
+exportBtn.addEventListener('click',()=>{
+    const url=URL.createObjectURL(new Blob([JSON.stringify(fullState())],{type:'application/json'}));
+    const a=document.createElement('a');a.href=url;a.download=`tetrad-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),4000);
+});
+importBtn.addEventListener('click',()=>importFile.click());
+importFile.addEventListener('change',e=>{
+    const file=e.target.files[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{try{
+        const d=JSON.parse(ev.target.result);
+        if(d&&d.version===2&&(d.app==='tetrad'||d.app==='kletka')){
+            if(!confirm('Заменить все тетради и поле данными из файла?'))return;
+            applyFullState(d);markDirty();
+        }else{
+            // старый формат: один рисунок — в текущее поле или страницу
+            saveState();const h=hydDrawing(d);userLines=h.userLines;fills=h.fills;pixelFills=h.pixelFills;
+            if(appMode==='field'){gridType=d.gridType||'square';gridScale=d.gridScale||50;if(d.camera)Object.assign(camera,d.camera);}
+            syncUI();invalidateIntersectionCache();draw();markDirty();
+        }
+    }catch(err){alert('Ошибка: '+err.message);}};
+    reader.readAsText(file);importFile.value='';
+});
+
+// ── ПРОЕКТЫ (сохранённые рисунки) ──
+let projectsCache=[];
+async function getProjects(){const p=await kvGet('projects');return Array.isArray(p)?p:[];}
+async function saveProjects(p){projectsCache=p;await kvSet('projects',p);}
+async function populateProjectList(){
+    const p=await getProjects();projectsCache=p;projectList.innerHTML='';
+    if(!p.length){const o=document.createElement('option');o.textContent='Нет проектов';o.disabled=true;projectList.appendChild(o);}
+    else p.forEach((proj,i)=>{const o=document.createElement('option');o.value=i;o.textContent=proj.name;projectList.appendChild(o);});
+}
+saveProjectBtn.addEventListener('click',async()=>{
+    const name=prompt('Имя проекта:','Новый проект');if(!name)return;
+    const p=await getProjects();
+    p.push({name,...serDrawing({userLines,fills,pixelFills}),camera:{...camera},gridType,gridScale});
+    await saveProjects(p);await populateProjectList();alert(`Сохранено: "${name}"`);
+});
+loadProjectBtn.addEventListener('click',()=>{
+    const p=projectsCache,idx=parseInt(projectList.value,10);
+    if(isNaN(idx)||idx<0||idx>=p.length){alert('Выберите проект');return;}
+    saveState();const pd=p[idx],h=hydDrawing(pd);
+    userLines=h.userLines;fills=h.fills;pixelFills=h.pixelFills;
+    if(appMode==='field'){if(pd.camera)Object.assign(camera,pd.camera);gridType=pd.gridType||'square';gridScale=pd.gridScale||50;}
+    syncUI();invalidateIntersectionCache();draw();markDirty();
+});
+deleteProjectBtn.addEventListener('click',async()=>{
+    const p=await getProjects(),idx=parseInt(projectList.value,10);
+    if(isNaN(idx)||idx<0||idx>=p.length)return;
+    if(confirm(`Удалить "${p[idx].name}"?`)){p.splice(idx,1);await saveProjects(p);await populateProjectList();}
+});
+
+// ── АВТОСОХРАНЕНИЕ: после каждого изменения и при сворачивании ──
+let saveTimer=null,appReady=false;
+function markDirty(){if(!appReady)return;clearTimeout(saveTimer);saveTimer=setTimeout(saveNow,500);}
+function saveNow(){if(!appReady)return;clearTimeout(saveTimer);saveTimer=null;try{kvSet('state',fullState());}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveNow();});
+window.addEventListener('pagehide',saveNow);
+window.addEventListener('beforeunload',saveNow);
+
+async function initApp(){
+    let s=await kvGet('state');
+    if(!s){
+        // перенос данных из старой версии
+        try{
+            const old=JSON.parse(localStorage.getItem('gridDrawing_autosave')||'null');
+            if(old){field={userLines:old.userLines||[],fills:old.fills||[],pixelFills:[],gridType:old.gridType||'square',gridScale:old.gridScale||50,camera:old.camera||{x:0,y:0,zoom:1}};}
+            const oldP=JSON.parse(localStorage.getItem('gridProjects')||'null');
+            if(Array.isArray(oldP)&&oldP.length&&!(await kvGet('projects')))await kvSet('projects',oldP.map(p=>({...p,pixelFills:[]})));
+        }catch(e){}
+        loadCurrent(false);
+    }else{
+        try{applyFullState(s);}catch(e){loadCurrent(false);}
+    }
+    appReady=true;
+    await populateProjectList();
+    if(!s)saveNow();
+}
+
+// ── DROPDOWN ───────────────────────────────────
+function closeAllDropdowns(){document.querySelectorAll('.dropdown-trigger.open').forEach(t=>t.classList.remove('open'));document.querySelectorAll('.dropdown-panel.open').forEach(p=>p.classList.remove('open'));}
+document.querySelectorAll('.dropdown-trigger').forEach(btn=>{
+    btn.addEventListener('click',e=>{
+        e.stopPropagation();
+        const panel=btn.nextElementSibling;
+        const wasOpen=panel.classList.contains('open');
+        closeAllDropdowns();
+        if(!wasOpen){btn.classList.add('open');panel.classList.add('open');}
+    });
+});
+document.querySelectorAll('.dropdown-panel').forEach(p=>{p.addEventListener('click',e=>e.stopPropagation());});
+document.addEventListener('click',closeAllDropdowns);
+canvas.addEventListener('mousedown',closeAllDropdowns,{capture:true});
+canvas.addEventListener('touchstart',closeAllDropdowns,{capture:true,passive:true});
+gridTypeSelect.addEventListener('change',()=>setTimeout(closeAllDropdowns,150));
+
+// ── ИНИЦИАЛИЗАЦИЯ ──────────────────────────────
+resizeCanvas();
+updateHistoryButtons();
+initApp();
+
+</script>
+</body>
+</html>
